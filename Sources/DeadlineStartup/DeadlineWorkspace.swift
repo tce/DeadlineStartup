@@ -4,6 +4,7 @@ import AppKit
 struct DeadlineWorkspace: View {
     @EnvironmentObject var store: Store
     @ObservedObject private var tracker = WritingTracker.shared
+    @ObservedObject private var localProjects = LocalProjects.shared
     let deadlineID: UUID
     @State private var original: Deadline?
     @State private var about = ""
@@ -24,10 +25,24 @@ struct DeadlineWorkspace: View {
                 Spacer()
                 Button {
                     if let deadline = store.data.deadlines.first(where: { $0.id == deadlineID }) {
-                        OverleafWindows.shared.open(deadline: deadline, store: store)
+                        if deadline.localProjectPath != nil {
+                            LocalProjects.shared.open(deadline: deadline, store: store) { failure = $0 }
+                        } else { OverleafWindows.shared.open(deadline: deadline, store: store) }
                     }
-                } label: { Label("Open Overleaf", systemImage: "arrow.up.right.square") }
+                } label: { Label(original?.localProjectPath == nil ? "Open Overleaf" : "Open in Emacs", systemImage: "arrow.up.right.square") }
+                if localProjects.isCreating { ProgressView().controlSize(.small).help("Downloading project template…") }
                 Menu {
+                    Button("Create local project…") {
+                        if let deadline = store.data.deadlines.first(where: { $0.id == deadlineID }) {
+                            LocalProjects.shared.create(deadline: deadline, store: store) { failure = $0 }
+                        }
+                    }
+                    .disabled(localProjects.isCreating)
+                    Button("Open Overleaf") {
+                        if let deadline = store.data.deadlines.first(where: { $0.id == deadlineID }) {
+                            OverleafWindows.shared.open(deadline: deadline, store: store)
+                        }
+                    }
                     Button("Link an existing Overleaf project…") {
                         projectLink = original?.overleafProjectURL ?? ""; editingProject = true
                     }
@@ -114,7 +129,7 @@ struct DeadlineWorkspace: View {
                 }
             }.padding(24).frame(width: 480)
         }
-        .alert("Unable to save details", isPresented: Binding(get: { failure != nil }, set: { if !$0 { failure = nil } })) {
+        .alert("Unable to complete action", isPresented: Binding(get: { failure != nil }, set: { if !$0 { failure = nil } })) {
             Button("OK") { failure = nil }
         } message: { Text(failure ?? "") }
     }

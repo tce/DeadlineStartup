@@ -15,8 +15,8 @@ enum OverleafProject {
         let title = name.map { replacements[$0] ?? String($0) }.joined()
         return "\\documentclass{article}\n\\usepackage[utf8]{inputenc}\n\\title{\(title)}\n\\author{}\n\\date{}\n\\begin{document}\n\\maketitle\n\\section{Introduction}\n% Start writing here.\n\\end{document}\n"
     }
-    static func creationRequest(name: String) -> URLRequest {
-        let fields = ["snip_uri": "data:application/x-tex;base64," + Data(starter(name: name).utf8).base64EncodedString(), "snip_name": name + ".tex", "engine": "pdflatex"]
+    static func creationRequest(name: String, archiveURL: URL = LocalProjectTemplate.archiveURL) -> URLRequest {
+        let fields = ["snip_uri": archiveURL.absoluteString, "snip_name": name + ".zip", "engine": "pdflatex"]
         func encoded(_ value: String) -> String { value.addingPercentEncoding(withAllowedCharacters: .alphanumerics)! }
         var request = URLRequest(url: URL(string: "https://www.overleaf.com/docs")!)
         request.httpMethod = "POST"

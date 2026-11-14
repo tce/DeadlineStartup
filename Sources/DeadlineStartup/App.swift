@@ -75,6 +75,7 @@ final class Store: ObservableObject {
                 deadline.about = current.about
                 deadline.actions = current.actions
                 deadline.overleafProjectURL = current.overleafProjectURL
+                deadline.localProjectPath = current.localProjectPath
             }
             return deadline
         }
@@ -305,7 +306,7 @@ struct DeadlineApp: App {
                 }
             }
         }
-
+        Settings { ProjectSettingsView() }
     }
 }
 
@@ -404,6 +405,7 @@ struct ContentView: View {
                         imported.about = existing.about
                         imported.actions = existing.actions
                         imported.overleafProjectURL = existing.overleafProjectURL
+                        imported.localProjectPath = existing.localProjectPath
                     }
                     return imported
                 }

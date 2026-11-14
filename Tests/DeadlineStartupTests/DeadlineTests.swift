@@ -16,6 +16,8 @@ struct DeadlineTests {
         try await tests.testSharedFile()
         try tests.testWritingSessions()
         tests.testOverleafProject()
+        try tests.testLocalProjects()
+        try tests.testLocalTemplate()
         tests.testYearCalendar()
         tests.testConferenceSharedDetails()
         tests.testBatchUpsert()
@@ -266,8 +268,12 @@ struct DeadlineTests {
         XCTAssertEqual(request.url?.absoluteString, "https://www.overleaf.com/docs")
         let fields = String(data: request.httpBody!, encoding: .utf8)!.split(separator: "&").map { $0.split(separator: "=", maxSplits: 1).map { String($0).removingPercentEncoding! } }
         let uri = fields.first { $0[0] == "snip_uri" }![1]
-        let content = String(data: Data(base64Encoded: String(uri.split(separator: ",", maxSplits: 1)[1]))!, encoding: .utf8)!
-        precondition(content.contains("\\title{Conference \\& 50\\%\\_test}"))
+        XCTAssertEqual(uri, LocalProjectTemplate.archiveURL.absoluteString)
+        XCTAssertEqual(fields.first { $0[0] == "snip_name" }?[1], "Conference & 50%_test.zip")
+        let alternate = URL(string: "https://github.com/example/template/archive/HEAD.zip")!
+        let alternateRequest = OverleafProject.creationRequest(name: "Custom", archiveURL: alternate)
+        precondition(String(data: alternateRequest.httpBody!, encoding: .utf8)!.contains("example%2Ftemplate"))
+        precondition(OverleafProject.starter(name: "Conference & 50%_test").contains("\\title{Conference \\& 50\\%\\_test}"))
         var abstract = Deadline(date: Date(), name: "HAIC 2027", kind: "Abstract", link: "")
         abstract.about = "Preserve description"
         let paper = Deadline(date: Date(), name: "HAIC 2027", kind: "Paper", link: "")
@@ -277,6 +283,63 @@ struct DeadlineTests {
         var source = abstract; source.overleafProjectURL = link
         let inherited = SavedData(deadlines: [source]).upserting([paper])
         XCTAssertEqual(inherited.deadlines[1].overleafProjectURL, link)
+    }
+
+    func testLocalTemplate() throws {
+        XCTAssertEqual(LocalProjectTemplate.archiveURL(for: LocalProjectTemplate.defaultRepository)?.absoluteString, "https://github.com/tce/LatexPaperTemplate/archive/HEAD.zip")
+        XCTAssertEqual(LocalProjectTemplate.repositoryURL(" https://github.com/tce/LatexPaperTemplate.git/ ")?.absoluteString, LocalProjectTemplate.defaultRepository)
+        for invalid in ["http://github.com/tce/template", "https://github.com.evil/tce/template", "https://github.com/tce/template/tree/main", "https://github.com/tce/template?x=1", "https://user@github.com/tce/template", "https://github.com/tce/.."] {
+            XCTAssertNil(LocalProjectTemplate.repositoryURL(invalid))
+        }
+        let preferences = UserDefaults(suiteName: "DeadlineTemplateTests-" + UUID().uuidString)!
+        preferences.set("https://github.com/example/custom", forKey: LocalProjectTemplate.repositoryKey)
+        XCTAssertEqual(LocalProjectTemplate.archiveURL(for: preferences.string(forKey: LocalProjectTemplate.repositoryKey)!)?.absoluteString, "https://github.com/example/custom/archive/HEAD.zip")
+        preferences.removeObject(forKey: LocalProjectTemplate.repositoryKey)
+
+        XCTAssertEqual(LocalProjectTemplate.folderName("HAIC 2027"), "HAIC 2027")
+        XCTAssertEqual(LocalProjectTemplate.folderName(" ../AI:2027/ "), "..-AI-2027-")
+        XCTAssertEqual(LocalProjectTemplate.folderName(".."), "Untitled project")
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("TemplateTests-" + UUID().uuidString)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let project = root.appendingPathComponent("HAIC 2027")
+        try FileManager.default.createDirectory(at: project, withIntermediateDirectories: true)
+        XCTAssertEqual(LocalProjectTemplate.availableDirectory(parent: root, name: "HAIC 2027").lastPathComponent, "HAIC 2027 (2)")
+        try "\\section{Content}".write(to: project.appendingPathComponent("chapter.tex"), atomically: true, encoding: .utf8)
+        do {
+            _ = try LocalProjectTemplate.entryFile(in: project)
+            preconditionFailure("A fragment is not a main document")
+        } catch { }
+        let main = project.appendingPathComponent("main.tex")
+        try "% \\documentclass{wrong}\n\\documentclass[aspectratio=169]{beamer}".write(to: main, atomically: true, encoding: .utf8)
+        XCTAssertEqual(try LocalProjectTemplate.entryFile(in: project), main)
+        try "\\documentclass{article}".write(to: project.appendingPathComponent("example.tex"), atomically: true, encoding: .utf8)
+        XCTAssertEqual(try LocalProjectTemplate.entryFile(in: project), main)
+    }
+
+    func testLocalProjects() throws {
+        var source = Deadline(date: Date(), name: "Local 2027", kind: "Abstract", link: "")
+        let paper = Deadline(date: Date(), name: source.name, kind: "Paper", link: "")
+        let path = "/tmp/My paper/main.tex"
+        let linked = SavedData(deadlines: [source, paper]).linkingLocalProject(path, for: source)
+        precondition(linked.deadlines.allSatisfy { $0.localProjectPath == path })
+        source.localProjectPath = path
+        let inherited = SavedData(deadlines: [source]).upserting([paper])
+        XCTAssertEqual(inherited.deadlines[1].localProjectPath, path)
+        let loaded = try JSONDecoder().decode(SavedData.self, from: JSONEncoder().encode(inherited))
+        XCTAssertEqual(loaded.deadlines[0].localProjectPath, path)
+        var session = WritingSession(deadline: source)
+        session.projectURL = URL(fileURLWithPath: path).absoluteString
+        let closed = session.checkpoint(at: session.startedAt.addingTimeInterval(65))
+        let reopened = WritingSession(deadline: paper)
+        let sessions = WritingSession.merging([closed], [closed, reopened])
+        XCTAssertEqual(sessions.count, 2)
+        XCTAssertEqual(sessions.reduce(0) { $0 + $1.seconds }, 65)
+        precondition(closed.belongs(to: paper))
+        precondition(WritingSession.greenDay(session.startedAt, sessions: sessions))
+        var renamed = paper
+        renamed.name = "Renamed"; renamed.localProjectPath = path
+        precondition(closed.belongs(to: renamed))
     }
 
     func testWritingSessions() throws {

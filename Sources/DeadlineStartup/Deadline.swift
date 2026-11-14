@@ -18,6 +18,7 @@ struct Deadline: Codable, Identifiable, Equatable, Sendable {
     var about: String?
     var actions: [DeadlineAction]?
     var overleafProjectURL: String?
+    var localProjectPath: String?
 
     var timeZone: TimeZone { TimeZone(identifier: timeZoneIdentifier ?? "") ?? .current }
     var topicList: [String] {
@@ -125,6 +126,14 @@ struct SavedData: Codable, Sendable {
         return updated
     }
 
+    func linkingLocalProject(_ path: String, for source: Deadline) -> SavedData {
+        var updated = self
+        for index in updated.deadlines.indices where updated.deadlines[index].isSameConference(as: source) {
+            updated.deadlines[index].localProjectPath = path
+        }
+        return updated
+    }
+
     func sharingDetails(from source: Deadline) -> SavedData {
         var updated = self
         for index in updated.deadlines.indices where updated.deadlines[index].isSameConference(as: source) {
@@ -153,6 +162,11 @@ struct SavedData: Codable, Sendable {
             if let project = group.compactMap(\.overleafProjectURL).first {
                 for index in updated.deadlines.indices where updated.deadlines[index].isSameConference(as: deadline) && updated.deadlines[index].overleafProjectURL == nil {
                     updated.deadlines[index].overleafProjectURL = project
+                }
+            }
+            if let path = group.compactMap(\.localProjectPath).first {
+                for index in updated.deadlines.indices where updated.deadlines[index].isSameConference(as: deadline) && updated.deadlines[index].localProjectPath == nil {
+                    updated.deadlines[index].localProjectPath = path
                 }
             }
             guard !descriptions.isEmpty || !tasks.isEmpty else { continue }

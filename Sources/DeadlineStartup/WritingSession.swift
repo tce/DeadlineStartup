@@ -20,7 +20,7 @@ struct WritingSession: Codable, Identifiable, Equatable, Sendable {
         return String(format: "%04d-%02d-%02d", parts.year!, parts.month!, parts.day!)
     }
     func belongs(to deadline: Deadline) -> Bool {
-        if let projectURL, projectURL == deadline.overleafProjectURL { return true }
+        if let projectURL, projectURL == deadline.overleafProjectURL || projectURL == deadline.localProjectPath.map({ URL(fileURLWithPath: $0).absoluteString }) { return true }
         if deadlineID == deadline.id { return true }
         return deadline.isSameConference(as: Deadline(date: startedAt, name: conferenceName, kind: "", link: conferenceLink))
     }
