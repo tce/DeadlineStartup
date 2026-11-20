@@ -3,6 +3,7 @@ import SwiftUI
 struct DeadlineYearGrid: View {
     let deadlines: [Deadline]
     let savedSessions: [WritingSession]
+    var select: (Deadline) -> Void = { _ in }
     @ObservedObject private var tracker = WritingTracker.shared
     var body: some View {
         TimelineView(.periodic(from: .now, by: 3600)) { timeline in
@@ -44,6 +45,9 @@ struct DeadlineYearGrid: View {
                                             .help(description(date, items: items, worked: WritingSession.greenDay(date, sessions: sessions)))
                                             .accessibilityLabel(description(date, items: items, worked: WritingSession.greenDay(date, sessions: sessions)))
                                             .accessibilityHidden(!inRange)
+                                            .contentShape(Rectangle())
+                                            .onTapGesture { if inRange, let first = items.first { select(first) } }
+                                            .accessibilityAddTraits(inRange && !items.isEmpty ? .isButton : [])
                                     }
                                 }.frame(width: step, alignment: .leading)
                             }

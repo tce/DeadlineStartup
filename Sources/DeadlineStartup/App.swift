@@ -321,8 +321,22 @@ struct ContentView: View {
     @State private var pendingImports: [Deadline] = []
     @State private var batchImport: DeadlineBatch?
     @State private var importedDateConfirmed = true
+    @State private var scrollTarget: UUID?
+    @State private var highlighted: UUID?
     private var visible: [Deadline] {
         showingAll ? store.data.deadlines.sorted { $0.date < $1.date } : Deadline.upcoming(store.data.deadlines)
+    }
+    /// Scrolls the deadline list to a deadline picked in the year grid,
+    /// including past deadlines when the list is hiding it.
+    private func reveal(_ deadline: Deadline) {
+        if !visible.contains(where: { $0.id == deadline.id }) { showingAll = true }
+        DispatchQueue.main.async {
+            scrollTarget = deadline.id
+            withAnimation { highlighted = deadline.id }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+                if highlighted == deadline.id { withAnimation { highlighted = nil } }
+            }
+        }
     }
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -344,7 +358,7 @@ struct ContentView: View {
             }.padding(.horizontal, 28).padding(.bottom, 16)
             HStack(spacing: 12) {
                 Rectangle().fill(Color(nsColor: .separatorColor)).frame(width: 14, height: 1)
-                DeadlineYearGrid(deadlines: store.data.deadlines, savedSessions: store.data.writingSessions ?? []).frame(maxWidth: 1000)
+                DeadlineYearGrid(deadlines: store.data.deadlines, savedSessions: store.data.writingSessions ?? [], select: reveal).frame(maxWidth: 1000)
                 Rectangle().fill(Color(nsColor: .separatorColor)).frame(width: 14, height: 1)
             }.frame(maxWidth: .infinity).padding(.horizontal, 16).padding(.vertical, 10)
             if visible.isEmpty {
@@ -354,14 +368,23 @@ struct ContentView: View {
                     Text("Add a deadline to see it here. Upcoming events appear in date order.").foregroundStyle(.secondary)
                 }.frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
-                ScrollView {
-                    LazyVStack(spacing: 10) {
-                        ForEach(visible) { deadline in
-                            DeadlineRow(deadline: deadline, open: { PaperWindows.shared.open(deadline: deadline, store: store) }, edit: { importedDateConfirmed = true; editing = deadline }, toggleCompleted: {
-                                var copy = deadline; copy.completed.toggle(); store.upsert(copy)
-                            }, delete: { deleting = deadline }, reportError: { store.error = $0 })
-                        }
-                    }.padding(24)
+                ScrollViewReader { proxy in
+                    ScrollView {
+                        LazyVStack(spacing: 10) {
+                            ForEach(visible) { deadline in
+                                DeadlineRow(deadline: deadline, open: { PaperWindows.shared.open(deadline: deadline, store: store) }, edit: { importedDateConfirmed = true; editing = deadline }, toggleCompleted: {
+                                    var copy = deadline; copy.completed.toggle(); store.upsert(copy)
+                                }, delete: { deleting = deadline }, reportError: { store.error = $0 })
+                                .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.accentColor, lineWidth: 2).opacity(highlighted == deadline.id ? 1 : 0))
+                                .id(deadline.id)
+                            }
+                        }.padding(24)
+                    }
+                    .onChange(of: scrollTarget) { target in
+                        guard let target else { return }
+                        withAnimation { proxy.scrollTo(target, anchor: .top) }
+                        scrollTarget = nil
+                    }
                 }
             }
             Divider()
