@@ -19,13 +19,29 @@ final class Store: ObservableObject {
     init() {
         let home = FileManager.default.homeDirectoryForCurrentUser
         let cloud = home.appendingPathComponent("Library/Mobile Documents/com~apple~CloudDocs")
-        // Use the same visible iCloud Drive file on each Mac. Never seed a new
-        // cloud file from a second Mac's potentially older local copy.
+        // Use the same visible iCloud Drive file on each Mac, creating it if needed.
+        // Never seed a new cloud file from a second Mac's potentially older local copy.
         usesCloud = FileManager.default.fileExists(atPath: cloud.path)
-        file = usesCloud ? cloud.appendingPathComponent("DeadlineStartup/deadlines.json") :
-            FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("DeadlineStartup/deadlines.json")
+        if usesCloud {
+            file = cloud.appendingPathComponent("DeadlineStartup/deadlines.json")
+        } else {
+            // Without iCloud Drive, keep the data in a hidden folder in the home directory.
+            file = home.appendingPathComponent(".deadlinestartup/deadlines.json")
+            Store.migrateLegacyLocalFile(to: file)
+        }
         disk = DeadlineFile(url: file, isCloud: usesCloud)
         Task { await reload() }
+    }
+
+    /// Earlier versions stored the local-only file in Application Support. Copy it
+    /// (leaving the original as a backup) so existing data is not lost.
+    private static func migrateLegacyLocalFile(to file: URL) {
+        let manager = FileManager.default
+        let legacy = manager.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("DeadlineStartup/deadlines.json")
+        guard !manager.fileExists(atPath: file.path), manager.fileExists(atPath: legacy.path) else { return }
+        try? manager.createDirectory(at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try? manager.copyItem(at: legacy, to: file)
     }
 
     func reload() async {

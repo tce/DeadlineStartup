@@ -173,9 +173,11 @@ struct DeadlineTests {
         let url = directory.appendingPathComponent("deadlines.json")
         let first = DeadlineFile(url: url, isCloud: false)
         let initial = try await first.load()
-        XCTAssertNil(initial.bytes)
+        XCTAssertNotNil(initial.bytes)
+        precondition(FileManager.default.fileExists(atPath: url.path))
+        XCTAssertEqual(initial.data.deadlines, [])
         let deadline = Deadline(date: Date(), name: "Shared conference", kind: "Paper", link: "https://example.com")
-        let bytes = try await first.save(SavedData(deadlines: [deadline]), expected: nil)
+        let bytes = try await first.save(SavedData(deadlines: [deadline]), expected: initial.bytes)
         let second = DeadlineFile(url: url, isCloud: true)
         let loaded = try await second.load()
         XCTAssertEqual(loaded.data.deadlines, [deadline])
@@ -191,9 +193,15 @@ struct DeadlineTests {
             preconditionFailure("Stale data must not overwrite the shared file")
         } catch DeadlineFileError.changed { }
         XCTAssertEqual(try Data(contentsOf: url), remoteBytes)
-        let absent = DeadlineFile(url: directory.appendingPathComponent("missing.json"), isCloud: true)
-        do { _ = try await absent.load(); preconditionFailure("Missing cloud data must not become an empty file") }
-        catch { }
+        let absentURL = directory.appendingPathComponent("missing.json")
+        let absent = try await DeadlineFile(url: absentURL, isCloud: true).load()
+        XCTAssertEqual(absent.data.deadlines, [])
+        precondition(FileManager.default.fileExists(atPath: absentURL.path))
+        let pendingURL = directory.appendingPathComponent("pending.json")
+        try Data().write(to: directory.appendingPathComponent(".pending.json.icloud"))
+        do { _ = try await DeadlineFile(url: pendingURL, isCloud: true).load(); preconditionFailure("An undownloaded cloud file must not be replaced") }
+        catch DeadlineFileError.missingCloudFile { }
+        precondition(!FileManager.default.fileExists(atPath: pendingURL.path))
         let corrupt = Data("Unreadable file".utf8)
         try corrupt.write(to: url)
         do { _ = try await second.load(); preconditionFailure("Corrupt data must not be accepted") }

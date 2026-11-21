@@ -14,7 +14,7 @@ Escape, the upper-right X, and the standard window close button dismiss the remi
 
 Enable **Open at login** to start the listener automatically after a restart or logout. Waking and unlocking an existing session does not trigger a login item, so wake notifications are handled separately. Reminders refresh their date and ordering when the window returns. This app does not send background notifications.
 
-Data is saved in `iCloud Drive/DeadlineStartup/deadlines.json` when iCloud Drive is present. Macs without an iCloud Drive folder use `~/Library/Application Support/DeadlineStartup/deadlines.json`. The original local file is preserved during migration. No account or network service is required. Event URLs open only when clicked. An unreadable data file is preserved rather than overwritten.
+Data is saved in `iCloud Drive/DeadlineStartup/deadlines.json` when iCloud Drive is present; the file is created if it does not exist. If iCloud Drive still holds the file only as an undownloaded placeholder, the app starts the download and waits rather than creating an empty file over it. Macs without an iCloud Drive folder use the hidden `~/.deadlinestartup/deadlines.json`, also created if missing. An existing `~/Library/Application Support/DeadlineStartup/deadlines.json` from earlier versions is copied there on first launch and left in place as a backup. No account or network service is required. Event URLs open only when clicked. An unreadable data file is preserved rather than overwritten.
 
 ## Build and verify
 
@@ -64,7 +64,7 @@ Version 1.9 supports selecting multiple imported deadlines with checkboxes, Sele
 
 Use this version of Deadline Startup on each Mac, signed into the same Apple Account with iCloud Drive enabled. In Finder, ensure `iCloud Drive/DeadlineStartup/deadlines.json` is downloaded, then open the app. It loads that same relative path on every Mac and shows “iCloud Drive” in its footer. The app reloads when activated or reopened after wake. Login settings remain specific to each Mac.
 
-File access is coordinated with macOS and runs off the main thread. Saves compare the loaded file contents before replacing the file, so updates already received from another Mac are not silently overwritten. If the file changed, the app loads the latest data and asks you to reopen the editor. Let iCloud finish syncing before switching computers; this is a shared document rather than a real-time database, and simultaneous offline edits can still produce iCloud conflicts. Missing or unreadable shared files are preserved rather than replaced with an empty file or an older local copy.
+File access is coordinated with macOS and runs off the main thread. Saves compare the loaded file contents before replacing the file, so updates already received from another Mac are not silently overwritten. If the file changed, the app loads the latest data and asks you to reopen the editor. Let iCloud finish syncing before switching computers; this is a shared document rather than a real-time database, and simultaneous offline edits can still produce iCloud conflicts. Unreadable or not-yet-downloaded shared files are preserved rather than replaced with an empty file or an older local copy.
 
 On November 11, 2026, four existing deadlines were copied into the iCloud Drive file on this Mac. The original local file remains as a backup. iCloud Drive handles transfer to the other Macs; installing the application on those computers is still required.
 
