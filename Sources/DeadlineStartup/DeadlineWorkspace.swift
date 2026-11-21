@@ -29,15 +29,27 @@ struct DeadlineWorkspace: View {
                             LocalProjects.shared.open(deadline: deadline, store: store) { failure = $0 }
                         } else { OverleafWindows.shared.open(deadline: deadline, store: store) }
                     }
-                } label: { Label(original?.localProjectPath == nil ? "Open Overleaf" : "Open in Emacs", systemImage: "arrow.up.right.square") }
+                } label: { Label(original?.localProjectPath == nil ? "Open Overleaf" : "Open in " + ProjectEditor.name(for: original?.localProjectApp), systemImage: "arrow.up.right.square") }
                 if localProjects.isCreating { ProgressView().controlSize(.small).help("Downloading project template…") }
                 Menu {
-                    Button("Create local project…") {
-                        if let deadline = store.data.deadlines.first(where: { $0.id == deadlineID }) {
-                            LocalProjects.shared.create(deadline: deadline, store: store) { failure = $0 }
+                    let editors = ProjectEditor.installed()
+                    Menu("Create local project in") {
+                        ForEach(editors) { editor in
+                            Button(editor.name) { createLocalProject(app: editor.bundleID) }
                         }
+                        Divider()
+                        Button("Other application…") { if let app = ProjectEditor.chooseOther() { createLocalProject(app: app) } }
                     }
                     .disabled(localProjects.isCreating)
+                    if original?.localProjectPath != nil {
+                        Menu("Open local project in") {
+                            ForEach(editors) { editor in
+                                Button(editor.name) { openLocalProject(app: editor.bundleID) }
+                            }
+                            Divider()
+                            Button("Other application…") { if let app = ProjectEditor.chooseOther() { openLocalProject(app: app) } }
+                        }
+                    }
                     Button("Open Overleaf") {
                         if let deadline = store.data.deadlines.first(where: { $0.id == deadlineID }) {
                             OverleafWindows.shared.open(deadline: deadline, store: store)
@@ -56,10 +68,18 @@ struct DeadlineWorkspace: View {
                 let sessions = tracker.sessions(in: store.data).filter { session in
                     store.data.deadlines.first(where: { $0.id == deadlineID }).map { session.belongs(to: $0) } ?? false
                 }
-                HStack(spacing: 24) {
-                    Label("Opened \(sessions.count) times", systemImage: "arrow.up.right.square")
-                    Label("Total time: \(WritingSession.duration(sessions.reduce(0) { $0 + $1.seconds }))", systemImage: "clock")
-                    Spacer()
+                VStack(alignment: .leading, spacing: 6) {
+                    HStack(spacing: 24) {
+                        Label("Opened \(sessions.count) times", systemImage: "arrow.up.right.square")
+                        Label("Total time: \(WritingSession.duration(sessions.reduce(0) { $0 + $1.seconds }))", systemImage: "clock")
+                        Spacer()
+                    }
+                    let usage = WritingSession.usageByApplication(sessions)
+                    if !usage.isEmpty {
+                        Text(usage.map { "\($0.name): \($0.count) \($0.count == 1 ? "opening" : "openings"), \(WritingSession.duration($0.seconds))" }
+                            .joined(separator: "   ·   "))
+                            .font(.caption)
+                    }
                 }.font(.callout).foregroundStyle(.secondary).padding(.horizontal, 24).padding(.bottom, 16)
             }
             Divider()
@@ -137,6 +157,14 @@ struct DeadlineWorkspace: View {
         let title = newAction.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !title.isEmpty else { return }
         actions.append(DeadlineAction(title: title)); newAction = ""
+    }
+    private func createLocalProject(app: String) {
+        guard let deadline = store.data.deadlines.first(where: { $0.id == deadlineID }) else { return }
+        LocalProjects.shared.create(deadline: deadline, app: app, store: store) { failure = $0 }
+    }
+    private func openLocalProject(app: String) {
+        guard let deadline = store.data.deadlines.first(where: { $0.id == deadlineID }) else { return }
+        LocalProjects.shared.open(deadline: deadline, in: app, store: store) { failure = $0 }
     }
     private func save() async -> Bool {
         guard let original, var current = store.data.deadlines.first(where: { $0.id == deadlineID }) else {

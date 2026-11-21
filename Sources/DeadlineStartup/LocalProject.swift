@@ -63,9 +63,13 @@ final class LocalProjects: ObservableObject {
         throw NSError(domain: "LocalProjects", code: 1, userInfo: [NSLocalizedDescriptionKey: "Could not find Emacs and emacsclient. Install Emacs.app in Applications, or install them in /opt/homebrew/bin or /usr/local/bin."])
     }
 
-    func create(deadline: Deadline, store: Store, reportError: @escaping @MainActor @Sendable (String) -> Void) {
-        do { _ = try executables() }
-        catch { reportError(error.localizedDescription); return }
+    func create(deadline: Deadline, app: String, store: Store, reportError: @escaping @MainActor @Sendable (String) -> Void) {
+        if ProjectEditor.isEmacs(app) {
+            do { _ = try executables() }
+            catch { reportError(error.localizedDescription); return }
+        } else if ProjectEditor.applicationURL(for: app) == nil {
+            reportError("\(ProjectEditor.name(for: app)) is not installed on this Mac."); return
+        }
         guard !isCreating else { return }
         let panel = NSOpenPanel()
         panel.title = "Choose a parent directory for " + deadline.name
@@ -89,11 +93,12 @@ final class LocalProjects: ObservableObject {
                 do {
                     let entry = try await self.downloadTemplate(name: deadline.name, parent: parent, progress: progress)
                     progress.update("Saving the project location…")
-                    guard await store.persist(store.data.linkingLocalProject(entry.path, for: deadline)) else {
+                    guard await store.persist(store.data.linkingLocalProject(entry.path, app: app, for: deadline)) else {
                         fail("Project created at \(entry.deletingLastPathComponent().path), but its association could not be saved. " + (store.error ?? "")); return
                     }
                     var linked = deadline
                     linked.localProjectPath = entry.path
+                    linked.localProjectApp = app
                     self.open(deadline: linked, store: store, progress: progress, reportError: reportError)
                 } catch { fail("Could not create local project: \(error.localizedDescription)") }
             }
@@ -140,9 +145,32 @@ final class LocalProjects: ObservableObject {
         return destination.appendingPathComponent(relative)
     }
 
+    /// Switches the project's application (for every deadline of the conference), then opens it.
+    func open(deadline: Deadline, in app: String, store: Store, reportError: @escaping @MainActor @Sendable (String) -> Void) {
+        guard let path = deadline.localProjectPath else { return }
+        Task { @MainActor in
+            guard await store.persist(store.data.linkingLocalProject(path, app: app, for: deadline)) else {
+                reportError("Could not save the application choice. " + (store.error ?? "")); return
+            }
+            var updated = deadline
+            updated.localProjectApp = app
+            self.open(deadline: updated, store: store, reportError: reportError)
+        }
+    }
+
     func open(deadline: Deadline, store: Store, progress existingProgress: ProjectLaunchProgress? = nil, reportError: @escaping @MainActor @Sendable (String) -> Void) {
         guard let path = deadline.localProjectPath else {
-            create(deadline: deadline, store: store, reportError: reportError); return
+            create(deadline: deadline, app: deadline.localProjectApp ?? ProjectEditor.emacsID, store: store, reportError: reportError); return
+        }
+        if let app = deadline.localProjectApp, !ProjectEditor.isEmacs(app) {
+            let name = ProjectEditor.name(for: app)
+            let progress = existingProgress ?? ProjectLaunchProgress(title: "Open in \(name) — " + deadline.name, status: "Opening \(name)…")
+            guard FileManager.default.fileExists(atPath: path) else {
+                let message = "The local project is missing at \(path). Use Create local project in… to choose a new location."
+                progress.fail(message); reportError(message); return
+            }
+            ExternalEditors.shared.open(deadline: deadline, path: path, bundleID: app, store: store, progress: progress, reportError: reportError)
+            return
         }
         let progress = existingProgress ?? ProjectLaunchProgress(title: "Open in Emacs — " + deadline.name, status: "Locating Emacs…")
         let fail: @MainActor @Sendable (String) -> Void = { message in progress.fail(message); reportError(message) }
@@ -160,7 +188,7 @@ final class LocalProjects: ObservableObject {
                 return
             }
             guard FileManager.default.fileExists(atPath: path) else {
-                fail("The local project is missing at \(path). Use Create local project… to choose a new location."); return
+                fail("The local project is missing at \(path). Use Create local project in… to choose a new location."); return
             }
             guard launching.insert(path).inserted else { progress.finish("This project is already being opened. Please wait for Emacs."); return }
             Task { @MainActor in
@@ -218,7 +246,7 @@ final class LocalProjects: ObservableObject {
                         if check.0 == 0, EmacsIntegration.frameReady(output: check.1, token: token), process.isRunning {
                             var local = deadline
                             local.overleafProjectURL = nil
-                            let session = WritingTracker.shared.start(deadline: local, store: store)
+                            let session = WritingTracker.shared.start(deadline: local, store: store, application: "Emacs")
                             WritingTracker.shared.setProject(URL(fileURLWithPath: path).absoluteString, sessionID: session)
                             projects[path] = OpenProject(process: process, sessionID: session, frameName: frameName)
                             progress.finish("Project opened in Emacs. Writing time and opening count are now being tracked.")

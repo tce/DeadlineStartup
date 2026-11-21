@@ -92,6 +92,7 @@ final class Store: ObservableObject {
                 deadline.actions = current.actions
                 deadline.overleafProjectURL = current.overleafProjectURL
                 deadline.localProjectPath = current.localProjectPath
+                deadline.localProjectApp = current.localProjectApp
             }
             return deadline
         }
@@ -445,6 +446,7 @@ struct ContentView: View {
                         imported.actions = existing.actions
                         imported.overleafProjectURL = existing.overleafProjectURL
                         imported.localProjectPath = existing.localProjectPath
+                        imported.localProjectApp = existing.localProjectApp
                     }
                     return imported
                 }

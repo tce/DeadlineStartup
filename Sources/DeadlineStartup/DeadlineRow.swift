@@ -3,6 +3,8 @@ import AppKit
 import UniformTypeIdentifiers
 
 struct DeadlineRow: View {
+    @EnvironmentObject var store: Store
+    @ObservedObject private var tracker = WritingTracker.shared
     let deadline: Deadline
     let open: () -> Void
     let edit: () -> Void
@@ -16,9 +18,11 @@ struct DeadlineRow: View {
                 Text(deadline.date, format: .dateTime.month(.abbreviated)).font(.caption.bold()).textCase(.uppercase)
                 Text(deadline.date, format: .dateTime.day()).font(.system(size: 27, weight: .semibold, design: .rounded))
                 Text(deadline.date, format: .dateTime.year()).font(.caption2)
+                usage.padding(.top, 8)
             }
             .environment(\.timeZone, deadline.hasTime == true ? deadline.timeZone : .current)
-            .foregroundStyle(.teal).frame(width: 62).padding(.top, 4)
+            .foregroundStyle(.teal)
+            .frame(width: 62).padding(.top, 4)
 
             ViewThatFits(in: .horizontal) {
                 HStack(alignment: .top, spacing: 28) {
@@ -56,9 +60,47 @@ struct DeadlineRow: View {
             if let dates = deadline.eventDates, !dates.isEmpty { Text(dates).foregroundStyle(.secondary) }
             if let location = deadline.location, !location.isEmpty { Label(location, systemImage: "mappin.and.ellipse").foregroundStyle(.secondary) }
             if let notes = deadline.notes, !notes.isEmpty { Text("Note: \(notes)").font(.callout) }
-            Text(deadline.kind).font(.caption.bold()).padding(.horizontal, 9).padding(.vertical, 4).background(.teal.opacity(0.1), in: Capsule())
+            HStack(spacing: 6) {
+                Text(deadline.kind).font(.caption.bold()).padding(.horizontal, 9).padding(.vertical, 4).background(.teal.opacity(0.1), in: Capsule())
+                if let path = deadline.localProjectPath {
+                    let app = ProjectEditor.name(for: deadline.localProjectApp)
+                    projectTag(app, systemImage: "folder", help: "Open \(URL(fileURLWithPath: path).deletingLastPathComponent().lastPathComponent) in \(app)") {
+                        LocalProjects.shared.open(deadline: deadline, store: store) { store.error = $0 }
+                    }
+                }
+                if deadline.overleafProjectURL != nil {
+                    projectTag("Overleaf", systemImage: "leaf", help: "Open the linked Overleaf project") {
+                        OverleafWindows.shared.open(deadline: deadline, store: store)
+                    }
+                }
+            }
 
         }.fixedSize(horizontal: false, vertical: true)
+    }
+
+    /// Openings and time across Overleaf and local projects, shown under the date.
+    private var usage: some View {
+        TimelineView(.periodic(from: .now, by: 1)) { _ in
+            let sessions = tracker.sessions(in: store.data).filter { $0.belongs(to: deadline) }
+            VStack(spacing: 1) {
+                Label("\(sessions.count)×", systemImage: "arrow.up.right.square")
+                Label(WritingSession.shortDuration(sessions.reduce(0) { $0 + $1.seconds }), systemImage: "clock")
+            }
+            .labelStyle(.titleAndIcon).font(.caption2).monospacedDigit().foregroundStyle(.secondary)
+            .lineLimit(1).fixedSize()
+            .help("Opened \(sessions.count) times · \(WritingSession.duration(sessions.reduce(0) { $0 + $1.seconds })) worked")
+            .accessibilityElement(children: .combine)
+        }
+    }
+
+    private func projectTag(_ title: String, systemImage: String, help: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Label(title, systemImage: systemImage).font(.caption.bold())
+                .padding(.horizontal, 9).padding(.vertical, 4)
+                .background(Color.accentColor.opacity(0.12), in: Capsule())
+                .contentShape(Capsule())
+        }
+        .buttonStyle(.plain).help(help)
     }
 
     private var timing: some View {

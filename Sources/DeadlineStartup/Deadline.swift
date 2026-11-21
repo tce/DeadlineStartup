@@ -19,6 +19,8 @@ struct Deadline: Codable, Identifiable, Equatable, Sendable {
     var actions: [DeadlineAction]?
     var overleafProjectURL: String?
     var localProjectPath: String?
+    /// Bundle identifier of the application that opens the local project; nil means Emacs.
+    var localProjectApp: String?
 
     var timeZone: TimeZone { TimeZone(identifier: timeZoneIdentifier ?? "") ?? .current }
     var topicList: [String] {
@@ -126,10 +128,11 @@ struct SavedData: Codable, Sendable {
         return updated
     }
 
-    func linkingLocalProject(_ path: String, for source: Deadline) -> SavedData {
+    func linkingLocalProject(_ path: String, app: String? = nil, for source: Deadline) -> SavedData {
         var updated = self
         for index in updated.deadlines.indices where updated.deadlines[index].isSameConference(as: source) {
             updated.deadlines[index].localProjectPath = path
+            updated.deadlines[index].localProjectApp = app
         }
         return updated
     }
@@ -164,9 +167,10 @@ struct SavedData: Codable, Sendable {
                     updated.deadlines[index].overleafProjectURL = project
                 }
             }
-            if let path = group.compactMap(\.localProjectPath).first {
+            if let linked = group.first(where: { $0.localProjectPath != nil }) {
                 for index in updated.deadlines.indices where updated.deadlines[index].isSameConference(as: deadline) && updated.deadlines[index].localProjectPath == nil {
-                    updated.deadlines[index].localProjectPath = path
+                    updated.deadlines[index].localProjectPath = linked.localProjectPath
+                    updated.deadlines[index].localProjectApp = linked.localProjectApp
                 }
             }
             guard !descriptions.isEmpty || !tasks.isEmpty else { continue }

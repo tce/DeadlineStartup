@@ -348,6 +348,30 @@ struct DeadlineTests {
         var renamed = paper
         renamed.name = "Renamed"; renamed.localProjectPath = path
         precondition(closed.belongs(to: renamed))
+
+        // The chosen application is shared, inherited, and persisted with the path.
+        let texShop = SavedData(deadlines: [source, paper]).linkingLocalProject(path, app: "TeXShop", for: source)
+        precondition(texShop.deadlines.allSatisfy { $0.localProjectApp == "TeXShop" })
+        var withApp = source; withApp.localProjectApp = "com.microsoft.VSCode"
+        let inheritedApp = SavedData(deadlines: [withApp]).upserting([paper])
+        XCTAssertEqual(inheritedApp.deadlines[1].localProjectApp, "com.microsoft.VSCode")
+        let reloaded = try JSONDecoder().decode(SavedData.self, from: JSONEncoder().encode(inheritedApp))
+        XCTAssertEqual(reloaded.deadlines[1].localProjectApp, "com.microsoft.VSCode")
+
+        // Usage is broken down per application; older sessions infer Emacs/Overleaf.
+        var vscode = WritingSession(deadline: paper); vscode.application = "Visual Studio Code"; vscode.seconds = 30
+        var vscodeAgain = vscode; vscodeAgain.id = UUID(); vscodeAgain.seconds = 20
+        let overleaf = WritingSession(deadline: paper).checkpoint(at: Date().addingTimeInterval(10))
+        XCTAssertEqual(closed.applicationName, "Emacs")
+        XCTAssertEqual(overleaf.applicationName, "Overleaf")
+        let usage = WritingSession.usageByApplication([closed, vscode, vscodeAgain, overleaf])
+        XCTAssertEqual(usage.map(\.name), ["Emacs", "Visual Studio Code", "Overleaf"])
+        XCTAssertEqual(usage.map(\.count), [1, 2, 1])
+        XCTAssertEqual(usage[1].seconds, 50)
+        XCTAssertEqual(WritingSession.shortDuration(59), "00:00")
+        XCTAssertEqual(WritingSession.shortDuration(45 * 60 + 30), "00:45")
+        XCTAssertEqual(WritingSession.shortDuration(2 * 3600 + 5 * 60), "02:05")
+        XCTAssertEqual(WritingSession.shortDuration(112 * 3600 + 30 * 60), "112:30")
     }
 
     func testWritingSessions() throws {

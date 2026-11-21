@@ -10,10 +10,20 @@ final class WritingTracker: NSObject, ObservableObject {
     private var flushing = false
     private var ticks = 0
     private var preparingToQuit = false
+    // Sessions that count only while their application is frontmost.
+    private var activeTimed: Set<UUID> = []
+    private var activeSince: [UUID: Date] = [:]
     var hasWork: Bool { !live.isEmpty || !pending.isEmpty }
 
-    func start(deadline: Deadline, store: Store) -> UUID {
-        let session = WritingSession(deadline: deadline)
+    /// `activeTimeOnly` sessions accumulate time only between `setActive(true)` and
+    /// `setActive(false)`; others count wall-clock time until stopped.
+    func start(deadline: Deadline, store: Store, application: String, activeTimeOnly: Bool = false, active: Bool = true) -> UUID {
+        var session = WritingSession(deadline: deadline)
+        session.application = application
+        if activeTimeOnly {
+            activeTimed.insert(session.id)
+            if active { activeSince[session.id] = Date() }
+        }
         live.append(session); stores[session.id] = store; pending[session.id] = session
         ensureTimer()
         Task { _ = await flush() }
@@ -23,10 +33,18 @@ final class WritingTracker: NSObject, ObservableObject {
         guard let index = live.firstIndex(where: { $0.id == sessionID }) else { return }
         live[index].projectURL = url; pending[sessionID] = live[index]
     }
+    func setActive(_ active: Bool, sessionID: UUID) {
+        guard activeTimed.contains(sessionID) else { return }
+        checkpoint()
+        if active { activeSince[sessionID] = activeSince[sessionID] ?? Date() }
+        else { activeSince.removeValue(forKey: sessionID) }
+    }
     func stop(_ id: UUID) {
+        checkpoint()
         guard let session = live.first(where: { $0.id == id }) else { return }
-        pending[id] = session.checkpoint(at: Date())
+        pending[id] = session
         live.removeAll { $0.id == id }
+        activeTimed.remove(id); activeSince.removeValue(forKey: id)
         Task { _ = await flush() }
     }
     func sessions(in data: SavedData) -> [WritingSession] {
@@ -46,7 +64,14 @@ final class WritingTracker: NSObject, ObservableObject {
     }
     private func checkpoint() {
         let now = Date()
-        live = live.map { $0.checkpoint(at: now) }
+        live = live.map { session in
+            guard activeTimed.contains(session.id) else { return session.checkpoint(at: now) }
+            guard let since = activeSince[session.id] else { return session }
+            var copy = session
+            copy.seconds += max(0, now.timeIntervalSince(since))
+            activeSince[session.id] = now
+            return copy
+        }
         for session in live { pending[session.id] = session }
     }
     private func flush() async -> Bool {

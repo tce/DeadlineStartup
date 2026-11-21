@@ -23,7 +23,7 @@ final class OverleafWindows: NSObject {
         let progress = ProjectLaunchProgress(title: "Open Overleaf — " + deadline.name, status: "Opening Overleaf…")
         if let existing = store.data.deadlines.first(where: { $0.isSameConference(as: deadline) && controllers[$0.id]?.window != nil }),
            let window = controllers[existing.id]?.window { window.deminiaturize(nil); window.makeKeyAndOrderFront(nil); progress.finish("This project is already open in Overleaf. No additional opening was counted."); return }
-        let session = WritingTracker.shared.start(deadline: deadline, store: store)
+        let session = WritingTracker.shared.start(deadline: deadline, store: store, application: "Overleaf")
         sessionIDs[deadline.id] = session
         let browser = OverleafBrowserModel(deadline: deadline, store: store, sessionID: session, progress: progress)
         browsers[deadline.id] = browser
